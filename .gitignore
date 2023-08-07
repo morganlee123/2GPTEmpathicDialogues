@@ -1,0 +1,11 @@
+*.pkl
+*.csv
+wocontext_Saves/
+empatheticdialogues.tar.gz
+empatheticdialogues/
+wocontext_Saves_gpt4/
+2gpt_gpt4saves/
+2GPTSaves/
+didntwork.csv
+gpt_emp_gen/
+ORIGINAL_Saves/
