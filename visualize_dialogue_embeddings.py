@@ -1,3 +1,9 @@
+#
+# Generates 3-D UMAP Projections of the ChatGPT-Generated Dialogue Embeddings.
+# Note: This script can also be used to do to same for the human-generated dialogue embedded representations.
+# Code Author: Morgan Sandler (sandle20@msu.edu)
+#
+
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import LabelEncoder
@@ -6,71 +12,125 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 import pandas as pd
+from umap import UMAP  # Make sure to install umap-learn package
+from mpl_toolkits.mplot3d import Axes3D  # Required for 3D plotting
+from sklearn.metrics.pairwise import euclidean_distances
+from matplotlib.patches import Patch
+from sklearn.cluster import KMeans
+from scipy.spatial.distance import cdist
 
-def visualize_embeddings(df):
+
+# support functions
+def merge_categories(labels):
+    category_map = {
+    'afraid': 'negative',
+    'angry': 'negative',
+    'annoyed': 'negative',
+    'anticipating': 'positive',
+    'anxious': 'negative',
+    'apprehensive': 'negative',
+    'ashamed': 'negative',
+    'caring': 'positive',
+    'confident': 'positive',
+    'content': 'positive',
+    'devastated': 'negative',
+    'disappointed': 'negative',
+    'disgusted': 'negative',
+    'embarrassed': 'negative',
+    'excited': 'positive',
+    'faithful': 'positive',
+    'furious': 'negative',
+    'grateful': 'positive',
+    'guilty': 'negative',
+    'hopeful': 'positive',
+    'impressed': 'positive',
+    'jealous': 'negative',
+    'joyful': 'positive',
+    'lonely': 'negative',
+    'nostalgic': 'positive',
+    'prepared': 'positive',
+    'proud': 'positive',
+    'sad': 'negative',
+    'sentimental': 'positive',
+    'surprised': 'positive',
+    'terrified': 'negative',
+    'trusting': 'positive'
+}
+
+    return [category_map.get(label, label) for label in labels]
+def compute_dunn_index(embeddings, labels):
+    unique_labels = np.unique(labels)
+    if len(unique_labels) != 2:
+        raise ValueError("There should be exactly two clusters.")
+
+    # Separation: Minimum distance between clusters
+    cluster_1 = embeddings[labels == unique_labels[0]]
+    cluster_2 = embeddings[labels == unique_labels[1]]
+    inter_cluster_distances = euclidean_distances(cluster_1, cluster_2)
+    min_inter_cluster_distance = np.min(inter_cluster_distances)
+
+    # Diameter: Maximum distance within a cluster
+    intra_cluster_distance_1 = euclidean_distances(cluster_1, cluster_1)
+    intra_cluster_distance_2 = euclidean_distances(cluster_2, cluster_2)
+    max_intra_cluster_diameter = max(np.max(intra_cluster_distance_1), np.max(intra_cluster_distance_2))
+
+    # Dunn Index
+    dunn_index = min_inter_cluster_distance / max_intra_cluster_diameter
+    return dunn_index
+
+# Function to identify outlier indices
+def find_outlier_indices(data, n_clusters=5, outlier_threshold=1.5):
+    kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+    kmeans.fit(data)
+    cluster_centers = kmeans.cluster_centers_
+    distances = cdist(data, cluster_centers, 'euclidean')
+    min_distances = np.min(distances, axis=1)
+    threshold = np.mean(min_distances) + outlier_threshold * np.std(min_distances)
+    outlier_indices = np.where(min_distances > threshold)[0]
+    return outlier_indices
+
+# Function to visualize embeddings and identify outliers
+def visualize_embeddings_umap(df):
     embeddings = np.vstack(df.embedding.values)
+    umap = UMAP(n_components=3, random_state=42)
+    embeddings_umap = umap.fit_transform(embeddings)
 
-    # Perform PCA
-    pca = PCA(n_components=2)
-    embeddings_pca = pca.fit_transform(embeddings)
+    original_labels = df.context.values
+    merged_labels = merge_categories(original_labels)  # Ensure this function is defined
+    label_encoder = LabelEncoder()
+    labels = label_encoder.fit_transform(merged_labels)
+    text_labels = label_encoder.inverse_transform(labels)
 
-    print(embeddings_pca.shape)
+    fig = plt.figure(figsize=(10, 8))
+    ax = fig.add_subplot(111, projection='3d')
 
-    # Fit the KMeans model to the PCA-reduced embeddings
-    kmeans = KMeans(n_clusters=32)
-    kmeans.fit(embeddings_pca)
+    for i, label in enumerate(text_labels):
+        color = 'blue' if label == 'positive' else 'red'
+        ax.scatter(embeddings_umap[i, 0], embeddings_umap[i, 1], embeddings_umap[i, 2], color=color, alpha=0.5)
 
-    # Get the cluster assignments for each embedding
-    emotion_categories = kmeans.labels_
+    positive_patch = Patch(color='blue', label='Positive')
+    negative_patch = Patch(color='red', label='Negative')
+    ax.legend(handles=[positive_patch, negative_patch], title="Sentiment", loc='best')
 
-    plt.figure(figsize=(10, 8))
-
-    # Use emotion_categories as color labels in the scatter plot
-    scatter = plt.scatter(embeddings_pca[:, 0], embeddings_pca[:, 1], c=emotion_categories, cmap='rainbow')
-    
-    # Create a legend for the colors
-    legend1 = plt.legend(*scatter.legend_elements(), title="Emotion Categories")
-    plt.gca().add_artist(legend1)
-
-    plt.savefig('gpt_viz.png')
+    plt.savefig('FINAL_humangenerated_umap_viz_3D.pdf')
     plt.show()
 
-    # Compare with original labels
-    original_labels = df.context.values  # Assuming 'context' column has the original labels
+    # Identify outlier indices
+    outlier_indices = find_outlier_indices(embeddings_umap)
+    outlier_original_labels = original_labels[outlier_indices]
+    outlier_coordinates = embeddings_umap[outlier_indices]
 
-    # Convert original labels to numbers
-    le = LabelEncoder()
-    original_labels_encoded = le.fit_transform(original_labels)
+    # Compute average coordinates for each unique label
+    unique_labels = np.unique(outlier_original_labels)
+    avg_coordinates = {label: np.mean(outlier_coordinates[outlier_original_labels == label], axis=0) for label in unique_labels}
 
-    cm = confusion_matrix(original_labels_encoded, emotion_categories)
-    
-    # Visualize the confusion matrix
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(cm, annot=True, fmt='d')
-    plt.xlabel('Predicted')
-    plt.ylabel('True')
-    plt.savefig('gpt_conf_mat.png')
-    plt.show()
+    print("Average Coordinates for each Emotion in Outliers:")
+    for label, coord in avg_coordinates.items():
+        print(f"{label}: {coord}")
 
-    # Get the emotion labels that most often correspond to each KMeans cluster
-    most_common_emotions = np.argsort(cm, axis=0)[-3:][::-1]
+    return outlier_indices, outlier_original_labels, avg_coordinates
 
-    # Compute the percentages
-    percentages = np.sort(cm / cm.sum(axis=1, keepdims=True), axis=0)[-3:][::-1] * 100
-
-    # Print out the results
-    for i in range(cm.shape[1]):
-        top_emotions = le.inverse_transform(most_common_emotions[:, i])
-        top_percentages = percentages[:, i]
-        print(f"CLUSTER CATEGORY {i + 1} - {', '.join([f'{emotion} ({percentage:.2f}%)' for emotion, percentage in zip(top_emotions, top_percentages)])}")
-
-
-
-
-embeddings = pd.read_pickle('gpt_embeddings.pkl')
-
-#embeddings['newembed'] = embeddings['embedding'].apply(string_to_numpy_array)
-
-visualize_embeddings(embeddings)
-
+# main code
+embeddings = pd.read_pickle('2GPTEmpathicDialoguesAsEmbeddings.pkl')
+outlier_indices, outlier_labels = visualize_embeddings_umap(embeddings)
 

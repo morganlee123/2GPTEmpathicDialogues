@@ -1,5 +1,6 @@
 # Purpose: Compute the embeddings for all dialogues in the all the datasets (Rashkin et al 2019 and 2GPT-EmpathicDialogues)
 # and then visualize them in a 2-dimensional space (reduced by UMAP/t-SNE) colored by emotion.
+# Uses the gpt2 model available from OpenAI to embed.
 # Runtime is about 1 hr with the OpenAI API
 # Author: Morgan Sandler (sandle20@msu.edu)
 
@@ -10,65 +11,67 @@ import numpy as np
 import openai
 import pandas as pd
 from tqdm import tqdm
-
 import nltk
 from transformers import GPT2Tokenizer
-
 from transformers import GPT2Tokenizer
-
+import time
 
 import os
 
 openai_api_key = os.getenv('OPENAI_API_KEY')
-
 if openai_api_key is None:
     raise Exception('OPENAI_API_KEY not found in the environment variables.')
 
-
 openai.api_key = openai_api_key
-
 
 def get_embeddings(conv_data, df_new):
     tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
     embeddings = []
+    max_retries = 10  # Maximum number of retries for generating embeddings
+
     for i, conv in tqdm(conv_data.iterrows()):
-
         conv_id = conv['conv_id']
-        dialogue = conv['processed'] # where the dialogue is stored. For human it's 'conversation' for gpt its 'processed'
+        dialogue = conv['processed'] 
 
-        try:
-            tokens = tokenizer.encode(dialogue)
-            truncated_tokens = tokens[:8000]
-            if len(tokens) > 8000:
-                print(f"Truncating conversation {conv_id} from {len(tokens)} tokens to {len(truncated_tokens)} tokens")
-            dialogue_str_truncated = tokenizer.decode(truncated_tokens)
+        retries = max_retries
+        while retries > 0:
+            try:
+                tokens = tokenizer.encode(dialogue)
+                truncated_tokens = tokens[:8000]
+                if len(tokens) > 8000:
+                    print(f"Truncating conversation {conv_id} from {len(tokens)} tokens to {len(truncated_tokens)} tokens")
+                dialogue_str_truncated = tokenizer.decode(truncated_tokens)
 
-            response = openai.Embedding.create(
-                input=dialogue_str_truncated,
-                model="text-embedding-ada-002"
-            )
-            embeddings.append(response['data'][0]['embedding'])
+                response = openai.Embedding.create(
+                    input=dialogue_str_truncated,
+                    model="text-embedding-ada-002"
+                )
+                embeddings.append(response['data'][0]['embedding'])
 
-            # Append the conversation to the DataFrame
-            df_new = df_new.append({
-                'conv_id': conv_id,
-                'context': conv['context'],
-                'embedding': np.array(response['data'][0]['embedding'], dtype=float)
-            }, ignore_index=True)
+                # Append to DataFrame
+                df_new = df_new.append({
+                    'conv_id': conv_id,
+                    'context': conv['context'],
+                    'embedding': np.array(response['data'][0]['embedding'], dtype=float)
+                }, ignore_index=True)
 
-        except KeyboardInterrupt:
-            print("KeyboardInterrupt occurred. Saving data and exiting.")
-            df_new.to_pickle('gpt_embeddings.pkl')  # Change here
-            return np.array(embeddings), df_new
-        except Exception as e:
-            print(f"An error occurred: {e}")
-            df_new.to_pickle('gpt_embeddings.pkl')  # And here
-            return np.array(embeddings), df_new
+                break  # Break the loop if successful
 
-    df_new.to_pickle('gpt_embeddings.pkl')  # And here
+            except KeyboardInterrupt:
+                print("KeyboardInterrupt occurred. Saving data and exiting.")
+                df_new.to_pickle('gptgenerateddialogues_embeddings.pkl')
+                return np.array(embeddings), df_new
+            except Exception as e:
+                print(f"An error occurred: {e}. Retrying {retries - 1} more times.")
+                retries -= 1
+                time.sleep(10) # Optional: Wait for 1 second before retrying
+                if retries == 0:
+                    print(f"Failed to generate embedding after {max_retries} attempts.")
+                    df_new.to_pickle('gptgenerateddialogues_embeddings.pkl')
+                    return np.array(embeddings), df_new
+
+    df_new.to_pickle('gptgenerateddialogues_embeddings.pkl')
     return np.array(embeddings), df_new
-
-
 
 def visualize_embeddings(embeddings):
     print(embeddings.shape)
@@ -81,12 +84,55 @@ def visualize_embeddings(embeddings):
     plt.figure(figsize=(10, 8))
     plt.scatter(embeddings_2d[:, 0], embeddings_2d[:, 1])
     plt.show()
-    plt.savefig('gpt_embedding_viz.png')
+    plt.savefig('Dec20_gpt_embedding_viz.png')
 
-# Assume dialogues is your dataset
-conv_data = pd.read_csv('2gpt_responses.csv', sep=',', header=0, on_bad_lines='warn')
+# to load the human csv file
+def read_custom_delimited_file_human(file_path):
+    data = []
+    
+    with open(file_path, 'r') as f:
+        # Skip header
+        next(f)
+        
+        for line in f:
+            # Remove newline character
+            line = line.strip()
+            
+            # Split by tab since the fields themselves could contain commas.
+            parts = line.split(',')
+            
+            # Assuming the data has 8 columns as per your description
+            if len(parts) != 8:
+                print(f"Skipping malformed line: {line}")
+                continue
+            
+            conv_id, utterance_idx, context, prompt, speaker_idx, utterance, selfeval, tags = parts
+            
+            # Split selfeval based on pipe '|'
+            selfeval = selfeval.split('|')
+            
+            # Append to data
+            data.append([conv_id, utterance_idx, context, prompt, speaker_idx, utterance, selfeval, tags])
+            
+    return pd.DataFrame(data, columns=['conv_id', 'utterance_idx', 'context', 'prompt', 'speaker_idx', 'utterance', 'selfeval', 'tags'])
+
+
+# TODO: Replace this with the actual path to your file
+#file_path = 'empatheticdialogues/train.csv' #for human
+file_path = '2GPTEmpathicDialoguesDataset.csv'
+
+#train_df = read_custom_delimited_file(file_path) # TODO: uncomment for human-generated. this fixed a bug loading Rashkin's dataset. Read_CSV didn't work well.
+#train_df['conversation'] = train_df.groupby('conv_id')['utterance'].transform(lambda x: ' '.join(x)) # TODO: Also uncomment for human-generated
+train_df = pd.read_csv(file_path) # TODO: uncomment for the gpt-generated
+
+# drop duplicates based on conv_id.
+train_df.drop_duplicates(subset=['conv_id'], inplace=True)
+
+print(len(train_df['conv_id'].unique()), 'samples loaded from train csv')
+print(len(train_df))
+
 # Assume df is your dataframe
 df_new = pd.DataFrame(columns=['conv_id', 'context', 'prompt', 'embedding'])
 
-embeddings, df_new = get_embeddings(conv_data,df_new)
-visualize_embeddings(embeddings)
+embeddings, df_new = get_embeddings(train_df,df_new)
+#visualize_embeddings(embeddings)
