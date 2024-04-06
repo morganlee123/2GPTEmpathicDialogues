@@ -1,7 +1,6 @@
 *.pkl
 *.csv
 *.txt
-*.png
 wocontext_Saves/
 empatheticdialogues.tar.gz
 empatheticdialogues/
