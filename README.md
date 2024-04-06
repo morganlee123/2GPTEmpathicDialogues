@@ -28,8 +28,7 @@ conda env create -f environment.yml
 To download the human-generated dialogues, refer to the original paper by Rashkin et al, 2019 and their corresponding code [repository](https://github.com/facebookresearch/EmpatheticDialogues).
 The ChatGPT-generated (ChatGPT3.5) dialogues may be download via this [link](https://drive.google.com/file/d/1GaHpHIGoKKNHrpjRx40lnljMn5v4b_zq/view?usp=sharing). Corresponding embeddings of the 2GPTEmpathicDialogues dataset can be downloaded [here](https://drive.google.com/file/d/1MjTyhbUCWFD9hF82Kzi8hxyrgDCf2H3B/view?usp=sharing). These were used in the following visualization from the paper:
 
-![2GPTED Embeddings Visualized in 3D](FINAL_gptgenerated_umap_viz_3D.pdf)
-3-D UMAP visualizations of ChatGPT-generated dialogues. The dialogues are color-coded by positive or negative valence values, determined by each dialogue’s underlying emotion category.
+![Umap viz](paperfigures/umapviz.png)
 
 #### Example dialogue from the 2GPTEmpathicDialogues dataset (from the paper)
 ![Example dialogue](paperfigures/exampledialogue.png)
