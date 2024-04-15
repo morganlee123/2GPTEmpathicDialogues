@@ -51,5 +51,5 @@ Note: separate statistical software was used for the linguistic analysis. Additi
 ![Linguistic analysis](paperfigures/linguisticanalysis.png)
 
 
-## Appendices mentioned in the paper (Appendix 1 and 2)
+## Appendix mentioned in the paper
 Summary statistics and statistical significance tests for all 118 linguistic categories from LIWC-22. Accessible [here](Appendix1and2.xlsx).
